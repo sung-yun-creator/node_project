@@ -1,0 +1,65 @@
+# 워크플로우 흐름: 
+# GitHub → Public 서버 접속 → Public 서버를 거쳐 Private 서버 접속
+#  → 코드 최신화 → 서버 재시작
+
+name: Deploy Backend (Private Node via Public Bastion)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Deploy backend to Private via Public
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PUBLIC_HOST }}
+          username: ${{ secrets.PUBLIC_USER }}
+          key: ${{ secrets.PRIVATE_SSH_KEY }}
+          script: |
+            set -e
+
+            ssh -o StrictHostKeyChecking=no \
+              "${{ secrets.PRIVATE_SSH_USER }}@${{ secrets.PRIVATE_SSH_HOST }}" \
+              "bash -lc '
+              set -e
+
+              export NVM_DIR=\"\$HOME/.nvm\"
+              [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+
+              nvm install --lts
+              nvm use --lts
+
+              command -v pm2 >/dev/null 2>&1 || npm install -g pm2
+
+              REPO_URL=\"${{ secrets.REPO_URL }}\"
+              APP_DIR=\"${{ secrets.PRIVATE_APP_DIR }}\"
+
+              if [ ! -d \"\$APP_DIR/.git\" ]; then
+                rm -rf \"\$APP_DIR\"
+                git clone \"\$REPO_URL\" \"\$APP_DIR\"
+              fi
+
+              cd \"\$APP_DIR\"
+              git fetch --all
+              git reset --hard origin/main
+
+              npm ci --omit=dev
+
+              if pm2 describe myproj-server >/dev/null 2>&1; then
+                pm2 reload myproj-server --update-env
+              else
+                pm2 start server.js --name myproj-server --cwd \"\$APP_DIR\"
+              fi
+
+              pm2 save
+            '"

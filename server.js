@@ -20,7 +20,7 @@ app.use(cors());
 app.use('/users', userRouter);
 
 app.get('/api/list', (req, res) => {
-  console.log("요청이 들어옴...");
+  console.log("요청이 들어옴...!!");
   res.send(dataSet);
 });
 
